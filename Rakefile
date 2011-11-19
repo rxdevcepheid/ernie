@@ -80,10 +80,7 @@ end
 #############################################################################
 
 task :ebuild do
-  ERLC_TEST_FLAGS = ""
-  ERLC_FLAGS = "-o ../ebin"
-  cd "elib"
-  sh "erlc  #{ERLC_FLAGS} #{ERLC_TEST_FLAGS} #{Dir["**/*.erl"].join(" ")}"
+  sh "./rebar compile"
 end
 
 #############################################################################
