@@ -1,2 +1,4 @@
 *.beam
 pkg
+rdoc
+Gemfile.lock
