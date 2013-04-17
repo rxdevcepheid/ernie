@@ -1,3 +1,4 @@
+-compile([{parse_transform, lager_transform}]).
 -module(ernie_native).
 -export([process/2]).
 -include_lib("ernie.hrl").
@@ -5,10 +6,10 @@
 process(ActionTerm, Request) ->
   {_Type, Mod, Fun, Args} = ActionTerm,
   Sock = Request#request.sock,
-  logger:debug("Calling ~p:~p(~p)~n", [Mod, Fun, Args]),
+  lager:debug("Calling ~p:~p(~p)~n", [Mod, Fun, Args]),
   try apply(Mod, Fun, Args) of
     Result ->
-      logger:debug("Result was ~p~n", [Result]),
+      lager:debug("Result was ~p~n", [Result]),
       Data = bert:encode({reply, Result}),
       gen_tcp:send(Sock, Data)
   catch

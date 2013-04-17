@@ -1,3 +1,4 @@
+-compile([{parse_transform, lager_transform}]).
 -module(ernie_server).
 -behaviour(gen_server).
 -include_lib("ernie.hrl").
@@ -85,7 +86,7 @@ handle_cast({process, Sock}, State) ->
              taccept = erlang:now()},
   Request = #request{sock = Sock, log = Log},
   spawn(fun() -> receive_term(Request, State) end),
-  logger:debug("Spawned receiver~n", []),
+  lager:debug("Spawned receiver~n", []),
   {noreply, State};
 handle_cast(kick, State) ->
   case queue:out(State#state.hq) of
@@ -105,7 +106,7 @@ handle_cast(fin, State) ->
   Listen = State#state.listen,
   Count = State#state.count,
   ZCount = State#state.zcount + 1,
-  logger:debug("Fin; Listen = ~p (~p/~p)~n", [Listen, Count, ZCount]),
+  lager:debug("Fin; Listen = ~p (~p/~p)~n", [Listen, Count, ZCount]),
   case Listen =:= false andalso ZCount =:= Count of
     true -> halt();
     false -> {noreply, State#state{zcount = ZCount}}
@@ -156,13 +157,13 @@ try_listen(Port, Times) ->
 loop(LSock) ->
   case gen_tcp:accept(LSock) of
     {error, closed} ->
-      logger:debug("Listen socket closed~n", []),
+      lager:debug("Listen socket closed~n", []),
       timer:sleep(infinity);
     {error, Error} ->
-      logger:debug("Connection accept error: ~p~n", [Error]),
+      lager:debug("Connection accept error: ~p~n", [Error]),
       loop(LSock);
     {ok, Sock} ->
-      logger:debug("Accepted socket: ~p~n", [Sock]),
+      lager:debug("Accepted socket: ~p~n", [Sock]),
       ernie_server:process(Sock),
       loop(LSock)
   end.
@@ -174,9 +175,9 @@ receive_term(Request, State) ->
   Sock = Request#request.sock,
   case gen_tcp:recv(Sock, 0) of
     {ok, BinaryTerm} ->
-      logger:debug("Got binary term: ~p~n", [BinaryTerm]),
+      lager:debug("Got binary term: ~p~n", [BinaryTerm]),
       Term = binary_to_term(BinaryTerm),
-      logger:info("Got term: ~p~n", [Term]),
+      lager:info("Got term: ~p~n", [Term]),
       case Term of
         {call, '__admin__', Fun, Args} ->
           ernie_admin:process(Sock, Fun, Args, State);
@@ -211,7 +212,7 @@ process_request(Request, Priority, Q2, State) ->
   end.
 
 no_module(Mod, Request, Priority, Q2, State) ->
-  logger:debug("No such module ~p~n", [Mod]),
+  lager:debug("No such module ~p~n", [Mod]),
   Sock = Request#request.sock,
   Class = <<"ServerError">>,
   Message = list_to_binary(io_lib:format("No such module '~p'", [Mod])),
@@ -221,7 +222,7 @@ no_module(Mod, Request, Priority, Q2, State) ->
 
 process_module(ActionTerm, [], Request, Priority, Q2, State) ->
   {_Type, Mod, Fun, _Args} = ActionTerm,
-  logger:debug("No such function ~p:~p~n", [Mod, Fun]),
+  lager:debug("No such function ~p:~p~n", [Mod, Fun]),
   Sock = Request#request.sock,
   Class = <<"ServerError">>,
   Message = list_to_binary(io_lib:format("No such function '~p:~p'", [Mod, Fun])),
@@ -232,32 +233,32 @@ process_module(ActionTerm, Specs, Request, Priority, Q2, State) ->
   [{_Mod, Id} | OtherSpecs] = Specs,
   case Id of
     native ->
-      logger:debug("Dispatching to native module~n", []),
+      lager:debug("Dispatching to native module~n", []),
       {_Type, Mod, Fun, Args} = ActionTerm,
       case erlang:function_exported(Mod, Fun, length(Args)) of
         false ->
-          logger:debug("Not found in native module ~p~n", [Mod]),
+          lager:debug("Not found in native module ~p~n", [Mod]),
           process_module(ActionTerm, OtherSpecs, Request, Priority, Q2, State);
         true ->
           PredFun = list_to_atom(atom_to_list(Fun) ++ "_pred"),
-          logger:debug("Checking ~p:~p(~p) for selection.~n", [Mod, PredFun, Args]),
+          lager:debug("Checking ~p:~p(~p) for selection.~n", [Mod, PredFun, Args]),
           case erlang:function_exported(Mod, PredFun, length(Args)) of
             false ->
-              logger:debug("No such predicate function ~p:~p(~p).~n", [Mod, PredFun, Args]),
+              lager:debug("No such predicate function ~p:~p(~p).~n", [Mod, PredFun, Args]),
               process_native_request(ActionTerm, Request, Priority, Q2, State);
             true ->
               case apply(Mod, PredFun, Args) of
                 false ->
-                  logger:debug("Predicate ~p:~p(~p) returned false.~n", [Mod, PredFun, Args]),
+                  lager:debug("Predicate ~p:~p(~p) returned false.~n", [Mod, PredFun, Args]),
                   process_module(ActionTerm, OtherSpecs, Request, Priority, Q2, State);
                 true ->
-                  logger:debug("Predicate ~p:~p(~p) returned true.~n", [Mod, PredFun, Args]),
+                  lager:debug("Predicate ~p:~p(~p) returned true.~n", [Mod, PredFun, Args]),
                   process_native_request(ActionTerm, Request, Priority, Q2, State)
               end
           end
       end;
     ValidPid when is_pid(ValidPid) ->
-      logger:debug("Found external pid ~p~n", [ValidPid]),
+      lager:debug("Found external pid ~p~n", [ValidPid]),
       process_external_request(ValidPid, Request, Priority, Q2, State)
   end.
 
@@ -267,7 +268,7 @@ close_if_cast(ActionTerm, Request) ->
       Sock = Request#request.sock,
       gen_tcp:send(Sock, term_to_binary({noreply})),
       ok = gen_tcp:close(Sock),
-      logger:debug("Closed cast.~n", []);
+      lager:debug("Closed cast.~n", []);
     _Any ->
       ok
   end.
@@ -284,7 +285,7 @@ finish(Priority, Q2, State) ->
 process_native_request(ActionTerm, Request, Priority, Q2, State) ->
   Count = State#state.count,
   State2 = State#state{count = Count + 1},
-  logger:debug("Count = ~p~n", [Count + 1]),
+  lager:debug("Count = ~p~n", [Count + 1]),
   Log = Request#request.log,
   Log2 = Log#log{type = native, tprocess = erlang:now()},
   Request2 = Request#request{log = Log2},
@@ -297,10 +298,10 @@ process_native_request(ActionTerm, Request, Priority, Q2, State) ->
 process_external_request(Pid, Request, Priority, Q2, State) ->
   Count = State#state.count,
   State2 = State#state{count = Count + 1},
-  logger:debug("Count = ~p~n", [Count + 1]),
+  lager:debug("Count = ~p~n", [Count + 1]),
   case asset_pool:lease(Pid) of
     {ok, Asset} ->
-      logger:debug("Leased asset for pool ~p~n", [Pid]),
+      lager:debug("Leased asset for pool ~p~n", [Pid]),
       Log = Request#request.log,
       Log2 = Log#log{type = external, tprocess = erlang:now()},
       Request2 = Request#request{log = Log2},
@@ -327,9 +328,9 @@ process_now(Pid, Request, Asset) ->
     asset_pool:return(Pid, Asset),
     ernie_server:fin(),
     ernie_server:kick(),
-    logger:debug("Returned asset ~p~n", [Asset]),
+    lager:debug("Returned asset ~p~n", [Asset]),
     gen_tcp:close(Request#request.sock),
-    logger:debug("Closed socket ~p~n", [Request#request.sock])
+    lager:debug("Closed socket ~p~n", [Request#request.sock])
   end.
 
 unsafe_process_now(Request, Asset) ->
@@ -337,15 +338,15 @@ unsafe_process_now(Request, Asset) ->
   Term = binary_to_term(BinaryTerm),
   case Term of
     {call, Mod, Fun, Args} ->
-      logger:debug("Calling ~p:~p(~p)~n", [Mod, Fun, Args]),
+      lager:debug("Calling ~p:~p(~p)~n", [Mod, Fun, Args]),
       Sock = Request#request.sock,
       {asset, Port, Token} = Asset,
-      logger:debug("Asset: ~p ~p~n", [Port, Token]),
+      lager:debug("Asset: ~p ~p~n", [Port, Token]),
       {ok, Data} = port_wrapper:rpc(Port, BinaryTerm),
       ok = gen_tcp:send(Sock, Data);
     {cast, Mod, Fun, Args} ->
-      logger:debug("Casting ~p:~p(~p)~n", [Mod, Fun, Args]),
+      lager:debug("Casting ~p:~p(~p)~n", [Mod, Fun, Args]),
       {asset, Port, Token} = Asset,
-      logger:debug("Asset: ~p ~p~n", [Port, Token]),
+      lager:debug("Asset: ~p ~p~n", [Port, Token]),
       {ok, _Data} = port_wrapper:rpc(Port, BinaryTerm)
   end.

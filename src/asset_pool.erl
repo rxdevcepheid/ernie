@@ -1,3 +1,4 @@
+-compile([{parse_transform, lager_transform}]).
 -module(asset_pool).
 -behaviour(gen_server).
 
@@ -48,7 +49,7 @@ init([Handler, Count]) ->
   error_logger:info_msg("~p starting~n", [?MODULE]),
   Token = make_ref(),
   Assets = start_handlers(Count, Handler, Token),
-  logger:debug("Assets = ~p~n", [Assets]),
+  lager:debug("Assets = ~p~n", [Assets]),
   {ok, #state{assets = Assets, count = Count, handler = Handler, token = Token}}.
 
 %%--------------------------------------------------------------------
@@ -61,7 +62,7 @@ init([Handler, Count]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 handle_call(lease, _From, State) ->
-  logger:debug("Leasing...~n", []),
+  lager:debug("Leasing...~n", []),
   Token = State#state.token,
   case queue:out(State#state.assets) of
     {{value, Asset}, Assets2} ->

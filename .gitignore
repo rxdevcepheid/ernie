@@ -3,3 +3,4 @@ ebin
 pkg
 rdoc
 Gemfile.lock
+deps

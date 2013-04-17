@@ -123,6 +123,7 @@ else
                -ernie_server config '"#{config}"' \
                -ernie_server log_level #{log_level} \
                -run ernie_server_app boot \
+               -pa deps/*/ebin
                #{erl_options}}.squeeze(' ')
   puts cmd
   STDOUT.flush
