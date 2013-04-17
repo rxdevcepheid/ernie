@@ -6,7 +6,7 @@ start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-  {ok, LogLevel} = application:get_env(ernie_server_app, log_level),
+  {ok, LogLevel} = application:get_env(ernie_server, log_level),
   io:format("Using log level ~p~n", [LogLevel]),
   {ok, {{one_for_one, 1, 60},
     [{logger, {logger, start_link, [[LogLevel]]},

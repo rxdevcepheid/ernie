@@ -4,10 +4,10 @@
 -export([boot/0, start/2, stop/1]).
 
 boot() ->
-  application:start(ernie_server_app).
+  application:start(ernie_server).
 
 start(_Type, _Args) ->
-  case application:get_env(ernie_server_app, access_log) of
+  case application:get_env(ernie_server, access_log) of
     {ok, AccessFile} ->
       ernie_access_logger_sup:start_link(AccessFile);
     undefined ->

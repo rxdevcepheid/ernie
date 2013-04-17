@@ -6,15 +6,15 @@ start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-  {ok, Port} = application:get_env(ernie_server_app, port),
+  {ok, Port} = application:get_env(ernie_server, port),
   io:format("Using port ~p~n", [Port]),
-  case application:get_env(ernie_server_app, pidfile) of
+  case application:get_env(ernie_server, pidfile) of
     {ok, Location} ->
       Pid = os:getpid(),
       ok = file:write_file(Location, list_to_binary(Pid));
     undefined -> ok
   end,
-  {ok, Config} = application:get_env(ernie_server_app, config),
+  {ok, Config} = application:get_env(ernie_server, config),
   {ok, Configs} = ernie_config:load(Config),
   io:format("~p~n", [Configs]),
   {ok, {{one_for_one, 1, 60},
