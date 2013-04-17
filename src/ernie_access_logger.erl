@@ -44,17 +44,17 @@ reopen() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([undefined]) ->
-  error_logger:info_msg("~p starting~n", [?MODULE]),
+  lager:info("~p starting~n", [?MODULE]),
   {ok, #lstate{}};
 init([AccessFileName]) ->
-  error_logger:info_msg("~p starting~n", [?MODULE]),
+  lager:info("~p starting~n", [?MODULE]),
   case file:open(AccessFileName, [append]) of
     {ok, AccessFile} ->
       {ok, _T} = timer:apply_interval(10000, ernie_access_logger, reopen, []),
       {ok, #lstate{access_file_name = AccessFileName,
                    access_file = AccessFile}};
     {error, Error} ->
-      error_logger:error_msg("Error opening access log ~p: ~p.~n", [AccessFileName, Error]),
+      lager:error("Error opening access log ~p: ~p.~n", [AccessFileName, Error]),
       {ok, #lstate{}}
   end.
 
@@ -108,7 +108,7 @@ handle_cast(_Msg, State) ->
   {noreply, State}.
 
 handle_info(Msg, State) ->
-  error_logger:error_msg("Unexpected message: ~p~n", [Msg]),
+  lager:error("Unexpected message: ~p~n", [Msg]),
   {noreply, State}.
 
 terminate(_Reason, _State) -> ok.

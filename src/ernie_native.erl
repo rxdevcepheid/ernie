@@ -1,4 +1,3 @@
--compile([{parse_transform, lager_transform}]).
 -module(ernie_native).
 -export([process/2]).
 -include_lib("ernie.hrl").

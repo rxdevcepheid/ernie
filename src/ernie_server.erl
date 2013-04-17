@@ -1,4 +1,3 @@
--compile([{parse_transform, lager_transform}]).
 -module(ernie_server).
 -behaviour(gen_server).
 -include_lib("ernie.hrl").
@@ -45,7 +44,7 @@ fin() ->
 %%--------------------------------------------------------------------
 init([Port, Configs]) ->
   process_flag(trap_exit, true),
-  error_logger:info_msg("~p starting~n", [?MODULE]),
+  lager:info("~p starting~n", [?MODULE]),
   {ok, LSock} = try_listen(Port, 500),
   spawn(fun() -> loop(LSock) end),
   Map = init_map(Configs),
@@ -114,7 +113,7 @@ handle_cast(fin, State) ->
 handle_cast(_Msg, State) -> {noreply, State}.
 
 handle_info(Msg, State) ->
-  error_logger:error_msg("Unexpected message: ~p~n", [Msg]),
+  lager:error("Unexpected message: ~p~n", [Msg]),
   {noreply, State}.
 
 terminate(_Reason, _State) -> ok.
@@ -139,17 +138,17 @@ extract_mapping(Config) ->
 % Listen and loop
 
 try_listen(Port, 0) ->
-  error_logger:error_msg("Could not listen on port ~p~n", [Port]),
+  lager:error("Could not listen on port ~p~n", [Port]),
   {error, "Could not listen on port"};
 try_listen(Port, Times) ->
   Res = gen_tcp:listen(Port, [binary, {packet, 4}, {active, false}, {reuseaddr, true}, {backlog, 128}]),
   case Res of
     {ok, LSock} ->
-      error_logger:info_msg("Listening on port ~p~n", [Port]),
+      lager:info("Listening on port ~p~n", [Port]),
       % gen_tcp:controlling_process(LSock, ernie_server),
       {ok, LSock};
     {error, Reason} ->
-      error_logger:info_msg("Could not listen on port ~p: ~p~n", [Port, Reason]),
+      lager:info("Could not listen on port ~p: ~p~n", [Port, Reason]),
       timer:sleep(5000),
       try_listen(Port, Times - 1)
   end.

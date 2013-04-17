@@ -109,7 +109,7 @@ else
   sname = options[:sname] ? "-sname #{options[:sname]}" : ''
   erl_options = options[:erl_options]
 
-  cmd = %Q{erl -boot start_sasl \
+  cmd = %Q{erl \
                #{name} \
                #{sname} \
                #{detached} \

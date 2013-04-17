@@ -1,4 +1,3 @@
--compile([{parse_transform, lager_transform}]).
 -module(asset_pool).
 -behaviour(gen_server).
 
@@ -46,7 +45,7 @@ idle_worker_count(Pid) ->
 %%--------------------------------------------------------------------
 init([Handler, Count]) ->
   process_flag(trap_exit, true),
-  error_logger:info_msg("~p starting~n", [?MODULE]),
+  lager:info("~p starting~n", [?MODULE]),
   Token = make_ref(),
   Assets = start_handlers(Count, Handler, Token),
   lager:debug("Assets = ~p~n", [Assets]),
@@ -112,7 +111,7 @@ handle_cast(_Msg, State) -> {noreply, State}.
 handle_info({'EXIT', _Pid, normal}, State) ->
   {noreply, State};
 handle_info({'EXIT', Pid, Error}, State) ->
-  error_logger:error_msg("Port ~p closed with ~p, restarting port...~n", [Pid, Error]),
+  lager:error("Port ~p closed with ~p, restarting port...~n", [Pid, Error]),
   ValidAssets = queue:filter(fun(Item) -> {asset, A, _T} = Item, A =/= Pid end, State#state.assets),
   Handler = State#state.handler,
   Token = State#state.token,
@@ -120,7 +119,7 @@ handle_info({'EXIT', Pid, Error}, State) ->
   Assets = queue:in(NewAsset, ValidAssets),
   {noreply, State#state{assets = Assets}};
 handle_info(Msg, State) ->
-  error_logger:error_msg("Unexpected message: ~p~n", [Msg]),
+  lager:error("Unexpected message: ~p~n", [Msg]),
   {noreply, State}.
 
 terminate(_Reason, _State) -> ok.

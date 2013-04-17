@@ -46,7 +46,7 @@ loop(Port, Timeout, Command) ->
         {Port, {data, Result}} ->
           Source ! {self(), Result}
       after Timeout ->
-        error_logger:error_msg("Port Wrapper ~p timed out in mid operation (~p)!~n", [self(),Message]),
+        lager:error("Port Wrapper ~p timed out in mid operation (~p)!~n", [self(),Message]),
         % We timed out, which means we need to close and then restart the port
         port_close(Port), % Should SIGPIPE the child.
         exit(timed_out)
@@ -54,12 +54,12 @@ loop(Port, Timeout, Command) ->
       loop(Port,Timeout,Command);
     {Port, {exit_status, _Code}} ->
       % Hard and Unanticipated Crash
-      error_logger:error_msg( "Port closed! ~p~n", [Port] ),
+      lager:error( "Port closed! ~p~n", [Port] ),
       exit({error, _Code});
     {'EXIT',_Pid,shutdown} ->
       port_close(Port),
       exit(shutdown);
     Any ->
-      error_logger:warning_msg("PortWrapper ~p got unexpected message: ~p~n", [self(), Any]),
+      lager:warning("PortWrapper ~p got unexpected message: ~p~n", [self(), Any]),
       loop(Port, Timeout, Command)
   end.
