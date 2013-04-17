@@ -102,9 +102,9 @@ else
   config = options[:config]
   port = options[:port] || DEFAULT_PORT
   log_level = options[:log_level] || 2
-  pidfile = options[:pidfile] ? "-ernie_server_app pidfile \"'#{options[:pidfile]}'\"" : ''
+  pidfile = options[:pidfile] ? "-ernie_server pidfile \"'#{options[:pidfile]}'\"" : ''
   detached = options[:detached] ? '-detached' : ''
-  access_log = options[:access_log] ? "-ernie_server_app access_log '\"#{options[:access_log]}\"'" : ''
+  access_log = options[:access_log] ? "-ernie_server access_log '\"#{options[:access_log]}\"'" : ''
   name = options[:name] ? "-name #{options[:name]}" : ''
   sname = options[:sname] ? "-sname #{options[:sname]}" : ''
   erl_options = options[:erl_options]
@@ -119,9 +119,9 @@ else
                #{code_paths}
                #{pidfile} \
                #{access_log} \
-               -ernie_server_app port #{port} \
-               -ernie_server_app config '"#{config}"' \
-               -ernie_server_app log_level #{log_level} \
+               -ernie_server port #{port} \
+               -ernie_server config '"#{config}"' \
+               -ernie_server log_level #{log_level} \
                -run ernie_server_app boot \
                #{erl_options}}.squeeze(' ')
   puts cmd
