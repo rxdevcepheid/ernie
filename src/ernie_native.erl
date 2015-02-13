@@ -12,8 +12,8 @@ process(ActionTerm, Request) ->
       Data = bert:encode({reply, Result}),
       gen_tcp:send(Sock, Data)
   catch
-    error:Error ->
-      BError = list_to_binary(io_lib:format("~p", [Error])),
+    AnyClass:Error ->
+      BError = list_to_binary(io_lib:format("~p:~p", [AnyClass, Error])),
       Trace = erlang:get_stacktrace(),
       BTrace = lists:map(fun(X) -> list_to_binary(io_lib:format("~p", [X])) end, Trace),
       Data = term_to_binary({error, [user, 0, <<"RuntimeError">>, BError, BTrace]}),
