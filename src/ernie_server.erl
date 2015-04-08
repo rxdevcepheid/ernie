@@ -45,11 +45,15 @@ fin() ->
 init([Port, Configs]) ->
   process_flag(trap_exit, true),
   lager:info("~p starting~n", [?MODULE]),
-  {ok, LSock} = try_listen(Port, 500),
-  spawn(fun() -> loop(LSock) end),
+  Mode = case application:get_env(ernie_server, ssl) of
+    {ok, true} -> ssl;
+    _          -> gen_tcp
+  end,
+  {ok, LSock} = try_listen(Port, 500, Mode),
+  spawn(fun() -> loop(LSock, Mode) end),
   Map = init_map(Configs),
   io:format("pidmap = ~p~n", [Map]),
-  {ok, #state{lsock = LSock, map = Map}}.
+  {ok, #state{lsock = LSock, map = Map, mode = Mode}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -137,11 +141,23 @@ extract_mapping(Config) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Listen and loop
 
-try_listen(Port, 0) ->
+try_listen(Port, 0, _Mode) ->
   lager:error("Could not listen on port ~p~n", [Port]),
   {error, "Could not listen on port"};
-try_listen(Port, Times) ->
-  Res = gen_tcp:listen(Port, [binary, {packet, 4}, {active, false}, {reuseaddr, true}, {backlog, 128}]),
+try_listen(Port, Times, Mode) ->
+  Res = case Mode of
+    ssl ->
+      {ok, Cacertfile} = application:get_env(ernie_server, cacertfile),
+      {ok, Certfile}   = application:get_env(ernie_server, certfile),
+      {ok, Keyfile}    = application:get_env(ernie_server, keyfile),
+      ssl:listen(Port, [binary, {packet, 4}, {active, false}, {reuseaddr, true}, {backlog, 128},
+        {cacertfile, Cacertfile},
+        {certfile, Certfile},
+        {keyfile, Keyfile}
+      ]);
+    gen_tcp ->
+      gen_tcp:listen(Port, [binary, {packet, 4}, {active, false}, {reuseaddr, true}, {backlog, 128}])
+  end,
   case Res of
     {ok, LSock} ->
       lager:info("Listening on port ~p~n", [Port]),
@@ -150,21 +166,29 @@ try_listen(Port, Times) ->
     {error, Reason} ->
       lager:info("Could not listen on port ~p: ~p~n", [Port, Reason]),
       timer:sleep(5000),
-      try_listen(Port, Times - 1)
+      try_listen(Port, Times - 1, Mode)
   end.
 
-loop(LSock) ->
-  case gen_tcp:accept(LSock) of
+loop(LSock, Mode) ->
+  Accept = case Mode of
+    ssl     -> ssl:transport_accept(LSock);
+    gen_tcp -> gen_tcp:accept(LSock)
+  end,
+  case Accept of
     {error, closed} ->
       lager:debug("Listen socket closed~n", []),
       timer:sleep(infinity);
     {error, Error} ->
       lager:debug("Connection accept error: ~p~n", [Error]),
-      loop(LSock);
+      loop(LSock, Mode);
     {ok, Sock} ->
       lager:debug("Accepted socket: ~p~n", [Sock]),
+      case Mode of
+        ssl     -> ok = ssl:ssl_accept(Sock);
+        gen_tcp -> ok
+      end,
       ernie_server:process(Sock),
-      loop(LSock)
+      loop(LSock, Mode)
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -172,7 +196,8 @@ loop(LSock) ->
 
 receive_term(Request, State) ->
   Sock = Request#request.sock,
-  case gen_tcp:recv(Sock, 0) of
+  Mode = State#state.mode,
+  case Mode:recv(Sock, 0) of
     {ok, BinaryTerm} ->
       lager:debug("Got binary term: ~p~n", [BinaryTerm]),
       Term = binary_to_term(BinaryTerm),
@@ -188,12 +213,12 @@ receive_term(Request, State) ->
           receive_term(Request3, State);
         _Any ->
           Request2 = Request#request{action = BinaryTerm},
-          close_if_cast(Term, Request2),
+          close_if_cast(Term, Request2, State),
           ernie_server:enqueue_request(Request2),
           ernie_server:kick()
       end;
     {error, closed} ->
-      ok = gen_tcp:close(Sock)
+      ok = Mode:close(Sock)
   end.
 
 process_info(Request, priority, [Priority]) ->
@@ -215,8 +240,9 @@ no_module(Mod, Request, Priority, Q2, State) ->
   Sock = Request#request.sock,
   Class = <<"ServerError">>,
   Message = list_to_binary(io_lib:format("No such module '~p'", [Mod])),
-  gen_tcp:send(Sock, term_to_binary({error, [server, 0, Class, Message, []]})),
-  ok = gen_tcp:close(Sock),
+  Mode = State#state.mode,
+  Mode:send(Sock, term_to_binary({error, [server, 0, Class, Message, []]})),
+  ok = Mode:close(Sock),
   finish(Priority, Q2, State).
 
 process_module(ActionTerm, [], Request, Priority, Q2, State) ->
@@ -225,8 +251,9 @@ process_module(ActionTerm, [], Request, Priority, Q2, State) ->
   Sock = Request#request.sock,
   Class = <<"ServerError">>,
   Message = list_to_binary(io_lib:format("No such function '~p:~p'", [Mod, Fun])),
-  gen_tcp:send(Sock, term_to_binary({error, [server, 0, Class, Message, []]})),
-  ok = gen_tcp:close(Sock),
+  Mode = State#state.mode,
+  Mode:send(Sock, term_to_binary({error, [server, 0, Class, Message, []]})),
+  ok = Mode:close(Sock),
   finish(Priority, Q2, State);
 process_module(ActionTerm, Specs, Request, Priority, Q2, State) ->
   [{_Mod, Id} | OtherSpecs] = Specs,
@@ -261,12 +288,13 @@ process_module(ActionTerm, Specs, Request, Priority, Q2, State) ->
       process_external_request(ValidPid, Request, Priority, Q2, State)
   end.
 
-close_if_cast(ActionTerm, Request) ->
+close_if_cast(ActionTerm, Request, State) ->
   case ActionTerm of
     {cast, _Mod, _Fun, _Args} ->
       Sock = Request#request.sock,
-      gen_tcp:send(Sock, term_to_binary({noreply})),
-      ok = gen_tcp:close(Sock),
+      Mode = State#state.mode,
+      Mode:send(Sock, term_to_binary({noreply})),
+      ok = Mode:close(Sock),
       lager:debug("Closed cast.~n", []);
     _Any ->
       ok
@@ -288,7 +316,7 @@ process_native_request(ActionTerm, Request, Priority, Q2, State) ->
   Log = Request#request.log,
   Log2 = Log#log{type = native, tprocess = erlang:now()},
   Request2 = Request#request{log = Log2},
-  spawn(fun() -> ernie_native:process(ActionTerm, Request2) end),
+  spawn(fun() -> ernie_native:process(ActionTerm, Request2, State) end),
   finish(Priority, Q2, State2).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -304,14 +332,14 @@ process_external_request(Pid, Request, Priority, Q2, State) ->
       Log = Request#request.log,
       Log2 = Log#log{type = external, tprocess = erlang:now()},
       Request2 = Request#request{log = Log2},
-      spawn(fun() -> process_now(Pid, Request2, Asset) end),
+      spawn(fun() -> process_now(Pid, Request2, Asset, State) end),
       finish(Priority, Q2, State2);
     empty ->
       State
   end.
 
-process_now(Pid, Request, Asset) ->
-  try unsafe_process_now(Request, Asset) of
+process_now(Pid, Request, Asset, State) ->
+  try unsafe_process_now(Request, Asset, State) of
     _AnyResponse ->
       Log = Request#request.log,
       Log2 = Log#log{tdone = erlang:now()},
@@ -328,11 +356,12 @@ process_now(Pid, Request, Asset) ->
     ernie_server:fin(),
     ernie_server:kick(),
     lager:debug("Returned asset ~p~n", [Asset]),
-    gen_tcp:close(Request#request.sock),
+    Mode = State#state.mode,
+    Mode:close(Request#request.sock),
     lager:debug("Closed socket ~p~n", [Request#request.sock])
   end.
 
-unsafe_process_now(Request, Asset) ->
+unsafe_process_now(Request, Asset, State) ->
   BinaryTerm = Request#request.action,
   Term = binary_to_term(BinaryTerm),
   case Term of
@@ -342,7 +371,8 @@ unsafe_process_now(Request, Asset) ->
       {asset, Port, Token} = Asset,
       lager:debug("Asset: ~p ~p~n", [Port, Token]),
       {ok, Data} = port_wrapper:rpc(Port, BinaryTerm),
-      ok = gen_tcp:send(Sock, Data);
+      Mode = State#state.mode,
+      ok = Mode:send(Sock, Data);
     {cast, Mod, Fun, Args} ->
       lager:debug("Casting ~p:~p(~p)~n", [Mod, Fun, Args]),
       {asset, Port, Token} = Asset,

@@ -37,6 +37,22 @@ exemplary.
 Ernie follows [Semantic Versioning](http://semver.org/) for release
 versioning.
 
+Changes to the original
+-----------------------
+
+Added SSL support.
+
+In your configuration file:
+
+    {ernie_server, [
+      {access_log, "log/ernie-access.log"},
+      {pidfile, "tmp/pids/ernie_server.pid"},
+      {ssl, true},
+      {cacertfile, "priv/ssl/ca.pem"},
+      {certfile, "priv/ssl/server.pem"},
+      {keyfile, "priv/ssl/server.key"}
+    ]},
+
 Installation
 ------------
 
@@ -217,13 +233,13 @@ Using a Ruby module and Ernie.expose:
 
     require 'rubygems'
     require 'ernie'
-    
+
     module Ext
       def add(a, b)
         a + b
       end
     end
-    
+
     Ernie.expose(:ext, Ext)
 
 ### BERT-RPC Sequence Example
