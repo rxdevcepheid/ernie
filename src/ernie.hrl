@@ -4,7 +4,8 @@
                 lq = queue:new(),       % low priority queue
                 count = 0,              % total request count
                 zcount = 0,             % total completed request count
-                map = undefined}).      % module map. tuples of {Mod, Id}
+                map = undefined,        % module map. tuples of {Mod, Id}
+                mode = gen_tcp}).       % gen_tcp or ssl
 
 -record(request, {sock = undefined,     % connection socket
                   log = undefined,      % log information
