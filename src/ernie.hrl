@@ -1,11 +1,12 @@
--record(state, {lsock = undefined,      % the listen socket
-                listen = true,          % whether to listen for new connections
-                hq = queue:new(),       % high priority queue
-                lq = queue:new(),       % low priority queue
-                count = 0,              % total request count
-                zcount = 0,             % total completed request count
-                map = undefined,        % module map. tuples of {Mod, Id}
-                mode = gen_tcp}).       % gen_tcp or ssl
+-record(state, {lsock = undefined,        % the listen socket
+                listen = true,            % whether to listen for new connections
+                hq = queue:new(),         % high priority queue
+                lq = queue:new(),         % low priority queue
+                count = 0,                % total request count
+                zcount = 0,               % total completed request count
+                map = undefined,          % module map. tuples of {Mod, Id}
+                mode = gen_tcp,           % gen_tcp or ssl
+                listen_pid = undefined}). % The process that listens and accepts incoming requests
 
 -record(request, {sock = undefined,     % connection socket
                   log = undefined,      % log information

@@ -50,10 +50,10 @@ init([Port, Configs]) ->
     _          -> gen_tcp
   end,
   {ok, LSock} = try_listen(Port, 500, Mode),
-  spawn(fun() -> loop(LSock, Mode) end),
+  ListenPid = spawn_listen_loop(LSock, Mode),
   Map = init_map(Configs),
   io:format("pidmap = ~p~n", [Map]),
-  {ok, #state{lsock = LSock, map = Map, mode = Mode}}.
+  {ok, #state{lsock = LSock, map = Map, mode = Mode, listen_pid = ListenPid}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -116,6 +116,12 @@ handle_cast(fin, State) ->
   end;
 handle_cast(_Msg, State) -> {noreply, State}.
 
+handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.listen_pid ->
+  lager:info("Received exit from listen_pid: ~p, state: ~p~n", [{'EXIT', Pid, Reason}, State]),
+  % Restart the listen loop to be able to accept new requests on the socket.
+  NewPid = spawn_listen_loop(State#state.lsock, State#state.mode),
+  NewState = State#state{listen_pid = NewPid},
+  {noreply, NewState};
 handle_info(Msg, State) ->
   lager:error("Unexpected message: ~p~n", [Msg]),
   {noreply, State}.
@@ -170,26 +176,47 @@ try_listen(Port, Times, Mode) ->
   end.
 
 loop(LSock, Mode) ->
-  Accept = case Mode of
-    ssl     -> ssl:transport_accept(LSock);
-    gen_tcp -> gen_tcp:accept(LSock)
-  end,
-  case Accept of
+  case accept(LSock, Mode) of
     {error, closed} ->
       lager:debug("Listen socket closed~n", []),
       timer:sleep(infinity);
     {error, Error} ->
       lager:debug("Connection accept error: ~p~n", [Error]),
       loop(LSock, Mode);
-    {ok, Sock} ->
-      lager:debug("Accepted socket: ~p~n", [Sock]),
-      case Mode of
-        ssl     -> ok = ssl:ssl_accept(Sock);
-        gen_tcp -> ok
+    {ok, Sock} when Mode =:= ssl ->
+      lager:debug("Accepted socket: ~p in mode: ~p~n", [Sock, Mode]),
+      case ssl:ssl_accept(Sock) of
+        ok ->
+          ok;
+        {error, Reason} ->
+          % ssl transport_accept failed.
+          % Close the SSL connection and exit the listening process.
+          % The exit signal is received by parent in handle_info.
+          ok = ssl:close(Sock),
+          NewReason = {{error, Reason}, {socket, Sock}},
+          error(NewReason)
       end,
+      ernie_server:process(Sock),
+      loop(LSock, Mode);
+    {ok, Sock} when Mode =:= gen_tcp ->
+      lager:debug("Accepted socket: ~p in mode: ~p~n", [Sock, Mode]),
       ernie_server:process(Sock),
       loop(LSock, Mode)
   end.
+
+spawn_listen_loop(LSock, Mode) ->
+  Pid = spawn(fun() -> loop(LSock, Mode) end),
+  lager:info("Spawned listen loop pid: ~p~n", [Pid]),
+  % link to the Pid to receive EXIT event if the process terminates.
+  link(Pid),
+  Pid.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Support function for socket handling
+accept(LSock, ssl) ->
+  ssl:transport_accept(LSock);
+accept(LSock, gen_tcp) ->
+  gen_tcp:accept(LSock).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Receive and process

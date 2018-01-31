@@ -1,2 +1,2 @@
 install:
-	erlc -o ../ebin ../elib/*.erl
+	erlc -o ../ebin ../src/*.erl
