@@ -189,6 +189,9 @@ loop(LSock, Mode) ->
         ok ->
           ok;
         {error, Reason} ->
+          StackTrace = erlang:get_stacktrace(),
+          lager:error("ssl:ssl_accept returned ~p, stacktrace: ~p~n",
+                      [{error, Reason}, StackTrace]),
           % ssl transport_accept failed.
           % Close the SSL connection and exit the listening process.
           % The exit signal is received by parent in handle_info.
